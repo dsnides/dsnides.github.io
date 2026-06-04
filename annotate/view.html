@@ -90,7 +90,9 @@
     position: fixed;
     z-index: 2147483645;
     pointer-events: none;
-    transform: translate(-50%, -100%);
+    /* tip of the rotated diamond lands at (left, top) coordinate:
+       shift left by half the shaft width (13px), up by full shaft height + stem (26px + 10px) */
+    transform: translate(-13px, -36px);
     display: none;
   }
 
@@ -144,14 +146,14 @@
   #note-bubble::after {
     content: '';
     position: absolute;
-    top: -6px;
-    left: 50%;
-    transform: translateX(-50%) rotate(45deg);
+    left: -6px;
+    top: 50%;
+    transform: translateY(-50%) rotate(45deg);
     width: 10px;
     height: 10px;
     background: var(--bubble-bg);
-    border-top: 1px solid var(--bubble-border);
     border-left: 1px solid var(--bubble-border);
+    border-bottom: 1px solid var(--bubble-border);
   }
 
   /* ── Pulse ring on pin ── */
@@ -399,15 +401,25 @@
     pin.style.top  = py + 'px';
     pin.style.display = 'block';
 
-    // Position bubble above the pin, centered, clamped to viewport
-    const bubbleW = 240;
-    let bx = px - bubbleW / 2;
-    bx = Math.max(8, Math.min(bx, window.innerWidth - bubbleW - 8));
+    // Anchor bubble left edge just to the right of the pin (pin is 26px wide, offset 13px left by transform)
+    // So right edge of pin is at px + 13px. Add 8px gap.
+    const pinRightEdge = px + 13;
+    const gap = 8;
+    const bubbleMaxW = 240;
 
-    const pinHeight = 46;
-    const bubbleH = 80;
-    let by = py - pinHeight - bubbleH - 6;
-    if (by < wrapRect.top + 8) by = py + 16;
+    let bx = pinRightEdge + gap;
+    // Clamp so it doesn't run off right edge
+    if (bx + bubbleMaxW > window.innerWidth - 8) {
+      // flip to left side of pin instead
+      bx = px - 13 - gap - bubbleMaxW;
+    }
+
+    // Vertically: center bubble alongside the pin head (pin head center is ~13px above py)
+    bubble.style.maxWidth = bubbleMaxW + 'px';
+    const bubbleH = bubble.offsetHeight || 60;
+    let by = py - 13 - bubbleH / 2;
+    // Clamp vertically
+    by = Math.max(wrapRect.top + 8, Math.min(by, window.innerHeight - bubbleH - 8));
 
     bubble.style.left = bx + 'px';
     bubble.style.top  = by + 'px';
