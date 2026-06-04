@@ -1,1 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Annotation Viewer</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+  :root {
+    --pin-color: #D85A30;
+    --bubble-bg: #ffffff;
+    --bubble-border: #e0e0e0;
+    --bubble-text: #1a1a1a;
+    --ui-bg: #1a1a1a;
+    --ui-text: #ffffff;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  html, body {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    font-family: var(--font);
+    background: #111;
+  }
+
+  /* ── Top bar ── */
+  #topbar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 44px;
+    background: rgba(20,20,20,0.97);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px;
+    z-index: 2147483646;
+    font-size: 13px;
+    color: rgba(255,255,255,0.7);
+  }
+
+  #topbar .logo {
+    font-size: 16px;
+    margin-right: 4px;
+  }
+
+  #topbar .target-url {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: rgba(255,255,255,0.4);
+  }
+
+  #topbar .open-btn {
+    font-size: 12px;
+    font-weight: 500;
+    color: #fff;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background 0.15s;
+  }
+  #topbar .open-btn:hover { background: rgba(255,255,255,0.2); }
+
+  /* ── Iframe container ── */
+  #frame-wrap {
+    position: fixed;
+    top: 44px; left: 0; right: 0; bottom: 0;
+  }
+
+  #viewer-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+    background: #fff;
+  }
+
+  /* ── Pin ── */
+  #pin {
+    position: fixed;
+    z-index: 2147483645;
+    pointer-events: none;
+    transform: translate(-50%, -100%);
+    display: none;
+  }
+
+  #pin .shaft {
+    width: 26px;
+    height: 26px;
+    border-radius: 50% 50% 50% 0;
+    background: var(--pin-color);
+    transform: rotate(-45deg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  }
+
+  #pin .shaft::after {
+    content: '';
+    width: 9px;
+    height: 9px;
+    background: white;
+    border-radius: 50%;
+  }
+
+  #pin .stem {
+    width: 2px;
+    height: 10px;
+    background: rgba(216,90,48,0.4);
+    margin: 0 auto;
+  }
+
+  /* ── Note bubble ── */
+  #note-bubble {
+    position: fixed;
+    z-index: 2147483645;
+    background: var(--bubble-bg);
+    border: 1px solid var(--bubble-border);
+    border-radius: 10px;
+    padding: 10px 13px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--bubble-text);
+    max-width: 240px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+    pointer-events: none;
+    display: none;
+    transform: translateX(-50%);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  #note-bubble::after {
+    content: '';
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 10px;
+    height: 10px;
+    background: var(--bubble-bg);
+    border-top: 1px solid var(--bubble-border);
+    border-left: 1px solid var(--bubble-border);
+  }
+
+  /* ── Pulse ring on pin ── */
+  @keyframes pulse {
+    0%   { transform: rotate(-45deg) scale(1);   opacity: 1; }
+    70%  { transform: rotate(-45deg) scale(2.2); opacity: 0; }
+    100% { transform: rotate(-45deg) scale(2.2); opacity: 0; }
+  }
+
+  #pin .pulse {
+    position: absolute;
+    inset: 0;
+    border-radius: 50% 50% 50% 0;
+    border: 2px solid var(--pin-color);
+    animation: pulse 1.8s ease-out 0.5s 3;
+    pointer-events: none;
+  }
+
+  /* ── Blocked / error screen ── */
+  #blocked-screen {
+    position: fixed;
+    top: 44px; left: 0; right: 0; bottom: 0;
+    background: #111;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 2rem;
+    text-align: center;
+    color: rgba(255,255,255,0.7);
+    font-size: 14px;
+  }
+
+  #blocked-screen .icon { font-size: 48px; }
+  #blocked-screen h2 { font-size: 20px; font-weight: 600; color: #fff; }
+  #blocked-screen p { max-width: 440px; line-height: 1.6; }
+  #blocked-screen .site-name { color: #fff; font-weight: 500; }
+
+  #blocked-screen .action-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 8px;
+  }
+
+  #blocked-screen a, #blocked-screen button {
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s;
+  }
+
+  .btn-primary {
+    background: #D85A30;
+    color: #fff;
+    border: none;
+  }
+  .btn-primary:hover { background: #c04f27; }
+
+  .btn-secondary {
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.8);
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+  .btn-secondary:hover { background: rgba(255,255,255,0.14); }
+
+  #blocked-screen .note-preview {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    max-width: 400px;
+    text-align: left;
+    line-height: 1.6;
+    color: rgba(255,255,255,0.8);
+  }
+
+  #blocked-screen .note-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(255,255,255,0.35);
+    margin-bottom: 4px;
+  }
+
+  /* ── Loading spinner ── */
+  #loading {
+    position: fixed;
+    top: 44px; left: 0; right: 0; bottom: 0;
+    background: #1a1a1a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    color: rgba(255,255,255,0.5);
+    font-size: 13px;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .spinner {
+    width: 28px;
+    height: 28px;
+    border: 2px solid rgba(255,255,255,0.1);
+    border-top-color: #D85A30;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ── No params screen ── */
+  #no-params {
+    position: fixed;
+    top: 44px; left: 0; right: 0; bottom: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: rgba(255,255,255,0.5);
+    font-size: 14px;
+    background: #111;
+  }
+  #no-params .big { font-size: 40px; }
+  #no-params p { max-width: 320px; text-align: center; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div id="topbar">
+  <span class="logo">📌</span>
+  <span id="topbar-url" class="target-url">Loading…</span>
+  <a id="open-link" class="open-btn" href="#" target="_blank" rel="noopener">Open page ↗</a>
+</div>
+
+<!-- Loading -->
+<div id="loading">
+  <div class="spinner"></div>
+  <span>Loading page…</span>
+</div>
+
+<!-- Iframe -->
+<div id="frame-wrap">
+  <iframe id="viewer-iframe" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+</div>
+
+<!-- Pin overlay -->
+<div id="pin">
+  <div class="shaft">
+    <div class="pulse"></div>
+  </div>
+  <div class="stem"></div>
+</div>
+
+<!-- Note bubble -->
+<div id="note-bubble"></div>
+
+<!-- Blocked screen -->
+<div id="blocked-screen">
+  <div class="icon">🚫</div>
+  <h2>This site blocks embedding</h2>
+  <p><span class="site-name" id="blocked-hostname"></span> doesn't allow pages to be loaded inside other windows — a common security setting.</p>
+  <div class="note-preview" id="blocked-note-wrap">
+    <div class="note-label">Annotation note</div>
+    <div id="blocked-note-text"></div>
+  </div>
+  <div class="action-row">
+    <a id="blocked-open" class="btn-primary" href="#" target="_blank" rel="noopener">Open page directly ↗</a>
+    <button class="btn-secondary" onclick="copyNote()">Copy note</button>
+  </div>
+  <p style="font-size:12px; margin-top:4px; color: rgba(255,255,255,0.3);">
+    Tip: a browser extension version of this tool can bypass this restriction.
+  </p>
+</div>
+
+<!-- No params -->
+<div id="no-params">
+  <div class="big">📌</div>
+  <p>This is the annotation viewer. Open a shared annotation link to see a pinned note on a webpage.</p>
+</div>
+
+<script>
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  const targetUrl = params.get('url');
+  const xPct = parseFloat(params.get('x'));
+  const yPct = parseFloat(params.get('y'));
+  const note = params.get('note');
+
+  const iframe = document.getElementById('viewer-iframe');
+  const pin = document.getElementById('pin');
+  const bubble = document.getElementById('note-bubble');
+  const loading = document.getElementById('loading');
+  const blockedScreen = document.getElementById('blocked-screen');
+  const noParams = document.getElementById('no-params');
+  const topbarUrl = document.getElementById('topbar-url');
+  const openLink = document.getElementById('open-link');
+
+  // No params at all
+  if (!targetUrl || isNaN(xPct) || isNaN(yPct) || !note) {
+    loading.style.display = 'none';
+    noParams.style.display = 'flex';
+    topbarUrl.textContent = 'No annotation loaded';
+    openLink.style.display = 'none';
+    return;
+  }
+
+  // Populate topbar
+  try {
+    const u = new URL(targetUrl);
+    topbarUrl.textContent = u.hostname + u.pathname;
+  } catch(e) {
+    topbarUrl.textContent = targetUrl;
+  }
+  openLink.href = targetUrl;
+
+  // Populate blocked screen
+  try {
+    document.getElementById('blocked-hostname').textContent = new URL(targetUrl).hostname;
+  } catch(e) {
+    document.getElementById('blocked-hostname').textContent = targetUrl;
+  }
+  document.getElementById('blocked-note-text').textContent = note;
+  document.getElementById('blocked-open').href = targetUrl;
+  bubble.textContent = note;
+
+  // Position overlay elements based on viewport
+  function positionOverlays() {
+    const wrap = document.getElementById('frame-wrap');
+    const wrapRect = wrap.getBoundingClientRect();
+
+    const px = wrapRect.left + (xPct / 100) * wrapRect.width;
+    const py = wrapRect.top  + (yPct / 100) * wrapRect.height;
+
+    pin.style.left = px + 'px';
+    pin.style.top  = py + 'px';
+    pin.style.display = 'block';
+
+    // Position bubble above the pin, centered, clamped to viewport
+    const bubbleW = 240;
+    let bx = px - bubbleW / 2;
+    bx = Math.max(8, Math.min(bx, window.innerWidth - bubbleW - 8));
+
+    const pinHeight = 46;
+    const bubbleH = 80;
+    let by = py - pinHeight - bubbleH - 6;
+    if (by < wrapRect.top + 8) by = py + 16;
+
+    bubble.style.left = bx + 'px';
+    bubble.style.top  = by + 'px';
+    bubble.style.transform = 'none';
+    bubble.style.display = 'block';
+  }
+
+  // Detect iframe block via load event + cross-origin check
+  let loadFired = false;
+  let blockedTimer = null;
+
+  function showBlocked() {
+    loading.style.display = 'none';
+    iframe.style.display = 'none';
+    pin.style.display = 'none';
+    bubble.style.display = 'none';
+    blockedScreen.style.display = 'flex';
+  }
+
+  function onIframeLoad() {
+    loadFired = true;
+    clearTimeout(blockedTimer);
+
+    // Try to access contentDocument — if blocked by CSP/CORS it will throw
+    try {
+      const doc = iframe.contentDocument || iframe.contentWindow.document;
+      // If we can read it and it's an error page, also treat as blocked
+      if (doc && doc.body && doc.body.innerHTML === '') {
+        showBlocked();
+        return;
+      }
+    } catch(e) {
+      // Cross-origin — that's normal and fine, page loaded
+    }
+
+    loading.style.display = 'none';
+    positionOverlays();
+  }
+
+  iframe.addEventListener('load', onIframeLoad);
+
+  // If iframe never fires load (some block methods), show blocked after timeout
+  blockedTimer = setTimeout(() => {
+    if (!loadFired) showBlocked();
+  }, 8000);
+
+  // Start loading
+  iframe.src = targetUrl;
+
+  // Also detect X-Frame-Options block — browsers fire load with empty doc
+  // We watch for the iframe to become same-origin after load to verify
+  setTimeout(() => {
+    if (!loadFired) return;
+    try {
+      const loc = iframe.contentWindow.location.href;
+      if (!loc || loc === 'about:blank') showBlocked();
+    } catch(e) {
+      // Cross-origin but loaded — fine
+    }
+  }, 3000);
+
+  window.addEventListener('resize', () => {
+    if (pin.style.display === 'block') positionOverlays();
+  });
+
+  // Copy note to clipboard
+  window.copyNote = function() {
+    navigator.clipboard.writeText(note).then(() => {
+      const btn = document.querySelector('#blocked-screen .btn-secondary');
+      btn.textContent = '✓ Copied!';
+      setTimeout(() => btn.textContent = 'Copy note', 1500);
+    });
+  };
+})();
+</script>
+</body>
+</html>
